@@ -6,21 +6,30 @@ workflows:
     environment:
       java: 17
     scripts:
-      - name: Unzip, download model and build
+      - name: Unzip, download AI models and build
         script: |
           set -e
           unzip -q -o LogoFinder.zip
           cd LogoFinder
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-
           mkdir -p app/src/main/assets
-          curl -L -o app/src/main/assets/mobilenet_v3_large.tflite \
-            "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_large/float32/latest/mobilenet_v3_large.tflite"
-          SIZE=$(wc -c < app/src/main/assets/mobilenet_v3_large.tflite)
-          echo "Model size: $SIZE bytes"
-          if [ "$SIZE" -lt 100000 ]; then echo "Model download failed"; exit 1; fi
 
-          curl -L -o gradle.zip https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          download() {
+            curl -L --fail --retry 3 -o "$2" "$1"
+            SIZE=$(wc -c < "$2")
+            echo "$2: $SIZE bytes"
+            if [ "$SIZE" -lt "$3" ]; then echo "Download of $2 failed"; exit 1; fi
+          }
+
+          # Main model: Meta DINOv2 (small), ONNX format
+          download "https://huggingface.co/onnx-community/dinov2-small/resolve/main/onnx/model.onnx" \
+            app/src/main/assets/dinov2_small.onnx 50000000
+
+          # Second model: Google MediaPipe MobileNet image embedder
+          download "https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_large/float32/latest/mobilenet_v3_large.tflite" \
+            app/src/main/assets/mobilenet_v3_large.tflite 100000
+
+          download "https://services.gradle.org/distributions/gradle-8.9-bin.zip" gradle.zip 50000000
           unzip -q gradle.zip -d "$HOME/gradle-dist"
           "$HOME/gradle-dist/gradle-8.9/bin/gradle" assembleDebug --no-daemon --stacktrace
     artifacts:
